@@ -26,7 +26,7 @@ args = edict(
     EPOCHS     = 300,
     OVERFIT = 0,
     LR         = 0.2, 
-    NUM_GPUS   = 2,
+    NUM_GPUS   = 4,
     IMAGE_SIZE = 224,
     NUM_WORKERS = 8,
     WARMUP = 10,
@@ -152,7 +152,7 @@ if __name__ == '__main__':
 
     model = SelfSupervisedLearner(
         resnet,
-        lr = args.LR * 4 * 128 / 256,
+        lr = args.LR * args.NUM_GPUS * args.BATCH_SIZE / 256,
         image_size = args.IMAGE_SIZE,
         hidden_layer = 'avgpool',
         projection_size = 128,
@@ -172,8 +172,7 @@ if __name__ == '__main__':
         every_n_epochs = 100,
     )
     lr_scheduler = AdjustLearningRate(
-        milestones=[1,2,3],
-        init_lr=args.LR * 4 * 128 / 256,
+        init_lr=args.LR *args.NUM_GPUS * args.BATCH_SIZE / 256,
         max_epoch=args.EPOCHS,
         cos=True,
         warmup=args.WARMUP
