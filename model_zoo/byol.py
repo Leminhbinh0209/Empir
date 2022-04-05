@@ -75,6 +75,47 @@ def update_moving_average(ema_updater, ma_model, current_model):
 
 # MLP class for projector and predictor
 
+class Linear_fw(nn.Linear): #used in MAML to forward input with fast weight
+    def __init__(self, in_features, out_features, bias):
+        super(Linear_fw, self).__init__(in_features, out_features)
+        self.weight.fast = None #Lazy hack to add fast weight link
+        self.bias.fast = None
+
+    def forward(self, x):
+        if self.weight.fast is not None and self.bias.fast is not None:
+            out = F.linear(x, self.weight.fast, self.bias.fast)
+        else:
+            out = super(Linear_fw, self).forward(x)
+        return out
+
+class BatchNorm1d_fw(nn.BatchNorm1d): #used in MAML to forward input with fast weight
+    def __init__(self, num_features):
+        super(BatchNorm1d_fw, self).__init__(num_features)
+        self.weight.fast = None
+        self.bias.fast = None
+
+    def forward(self, x):
+        running_mean = torch.zeros(x.data.size()[1]).cuda()
+        running_var = torch.ones(x.data.size()[1]).cuda()
+        if self.weight.fast is not None and self.bias.fast is not None:
+            out = F.batch_norm(x, running_mean, running_var, self.weight.fast, self.bias.fast, training = True, momentum = 1)
+        else:
+            out = F.batch_norm(x, running_mean, running_var, self.weight, self.bias, training = True, momentum = 1)
+        return out
+
+class MLP_fw(nn.Module):
+    def __init__(self, dim, projection_size, hidden_size = 4096, use_momentum=True):
+        super().__init__()
+        self.net = nn.Sequential(
+            Linear_fw(dim, hidden_size),
+            BatchNorm1d_fw(hidden_size),
+            nn.ReLU(inplace=True),
+            Linear_fw(hidden_size, projection_size)
+        )
+
+    def forward(self, x):
+        return self.net(x)
+
 class MLP(nn.Module):
     def __init__(self, dim, projection_size, hidden_size = 4096, use_momentum=True):
         super().__init__()
@@ -164,7 +205,12 @@ class JSD(nn.Module):
 # and pipe it into the projecter and predictor nets
 
 class NetWrapper(nn.Module):
-    def __init__(self, net, projection_size, projection_hidden_size, layer = -2,  use_momentum=True):
+    def __init__(self, net, 
+    projection_size, 
+    projection_hidden_size, 
+    layer = -2,  
+    use_momentum=True
+    ):
         super().__init__()
         self.net = net
         self.layer = layer
@@ -200,6 +246,7 @@ class NetWrapper(nn.Module):
         _, dim = hidden.shape
         if self.use_momentum:
             projector = MLP(dim, self.projection_size, self.projection_hidden_size)
+            
         else:
             projector = SimSiamProjector(dim, self.projection_size, self.projection_hidden_size)
         return projector.to(hidden)
@@ -244,6 +291,7 @@ class BYOL(nn.Module):
         moving_average_decay = 0.99,
         use_momentum = True,
         use_jsd = False,
+        local_opt = False
     ):
         super().__init__()
         self.net = net
@@ -272,15 +320,22 @@ class BYOL(nn.Module):
         self.normalize =T.Normalize(
                 mean=torch.tensor([0.485, 0.456, 0.406]),
                 std=torch.tensor([0.229, 0.224, 0.225]))
-        self.online_encoder = NetWrapper(net, projection_size, projection_hidden_size, layer=hidden_layer, use_momentum=use_momentum)
+        self.online_encoder = NetWrapper(net, projection_size, 
+                                projection_hidden_size, 
+                                layer=hidden_layer, 
+                                use_momentum=use_momentum
+                                )
         if use_jsd:
             self.jsd = JSD()
         self.use_momentum = use_momentum
         self.target_encoder = None
         self.target_ema_updater = EMA(moving_average_decay)
+        self.local_opt = local_opt
 
-        self.online_predictor = MLP(projection_size, projection_size, projection_hidden_size, use_momentum=use_momentum) # as in official SimSiam implementation
-
+        if not local_opt: # Local optimization for online predictor
+            self.online_predictor = MLP(projection_size, projection_size, projection_hidden_size, use_momentum=use_momentum) # as in official SimSiam implementation
+        else:
+            self.online_predictor = MLP_fw(projection_size, projection_size, projection_hidden_size, use_momentum=use_momentum) 
         # get device of network and make wrapper same device
         device = get_module_device(net)
         self.to(device)
@@ -314,7 +369,7 @@ class BYOL(nn.Module):
         base_params = [u[1] for u in base_params]
 
         return predictor_params, base_params
-
+    def _optim_online_predictor(self, )
     def forward(
         self,
         x,
