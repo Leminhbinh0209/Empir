@@ -96,10 +96,7 @@ class SelfSupervisedLearner(pl.LightningModule):
     def configure_optimizers(self):
         opt = torch.optim.SGD(self.parameters(), lr=self.lr, momentum=0.9, weight_decay=0.0001)
         return opt
-    # COMMENT: I think it should be updated every iteration
-    #def on_before_zero_grad(self, _):
-    #    if self.learner.use_momentum:
-    #        self.learner.update_moving_average()
+
 
 # images dataset
 
@@ -178,8 +175,6 @@ if __name__ == '__main__':
         dirpath=f"{OUTPUT_DIR}/byol/results/",
         filename=args.RUN+'-{epoch:02d}-{train_top1:.2f}',
         save_last=True,
-       # save_top_k=1,
-       # mode="max",
         every_n_epochs = 100,
     )
     lr_scheduler = AdjustLearningRate(
@@ -188,7 +183,6 @@ if __name__ == '__main__':
         max_epoch=args.EPOCHS,
         cos=True,
         warmup=args.WARMUP
-        
     )
     
     trainer = pl.Trainer(
@@ -201,9 +195,7 @@ if __name__ == '__main__':
         resume_from_checkpoint = f"{OUTPUT_DIR}/results/byol.ckpt",
         precision=16,
         callbacks=[checkpoint_callback, lr_scheduler],
-        #auto_scale_batch_size=True, Tuner used
         deterministic=True,
-        # Testing purposes
         overfit_batches=args.OVERFIT
     )
 

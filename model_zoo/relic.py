@@ -18,12 +18,11 @@ from .byol import (default,
                     get_accuracy, accuracy, get_distance
                     )
 
+from .utils import RelicLoss
 
 
 
-
-def loss_fn(x, y):
-    pass
+loss_fn = RelicLoss(normalize=True, temperature=1.0, alpha=0.5)
 # augmentation utils
 # MLP class for projector and predictor
 
@@ -160,7 +159,7 @@ class ReLIC(nn.Module):
         self.target_encoder = None
         self.target_ema_updater = EMA(moving_average_decay)
 
-        self.online_predictor = MLP(projection_size, projection_size) # as in official SimSiam implementation
+     
 
         # get device of network and make wrapper same device
         device = get_module_device(net)
@@ -183,18 +182,7 @@ class ReLIC(nn.Module):
         assert self.use_momentum, 'you do not need to update the moving average, since you have turned off momentum for the target encoder'
         assert self.target_encoder is not None, 'target encoder has not been created yet'
         update_moving_average(self.target_ema_updater, self.target_encoder, self.online_encoder)
-    def _get_parameter(self):
-        predictor_param_name = []
-        predictor_params = list([])
-        predictor_params += list(getattr(self, "online_predictor").parameters())
-        for i, param in getattr(self, "online_predictor").named_parameters():
-            predictor_param_name.append(f"online_predictor.{i}")
-   
-        base_params = list(
-            filter(lambda kv: kv[0] not in predictor_param_name, self.named_parameters()))
-        base_params = [u[1] for u in base_params]
 
-        return predictor_params, base_params
 
     def forward(
         self,
@@ -212,12 +200,10 @@ class ReLIC(nn.Module):
 
         online_proj_one, representation = self.online_encoder(image_one)
         online_proj_two, _ = self.online_encoder(image_two)
-        #print(representation.shape)
-        online_pred_one = self.online_predictor(online_proj_one)
-        online_pred_two = self.online_predictor(online_proj_two)
+        orig_proj, _ = self.online_encoder(self.normalize(x))
 
         with torch.no_grad():
-            target_encoder = self._get_target_encoder() if self.use_momentum else self.online_encoder
+            target_encoder = self._get_target_encoder() 
             target_proj_one, _ = target_encoder(image_one)
             target_proj_two, _ = target_encoder(image_two)
             target_proj_one.detach_()
@@ -226,20 +212,12 @@ class ReLIC(nn.Module):
             target_orig_img, _ = target_encoder(self.normalize(x))
             target_orig_img.detach_()
 
-        
-        loss_one = loss_fn(online_pred_one, target_proj_two.detach())
-        loss_two = loss_fn(online_pred_two, target_proj_one.detach())
-         
-        #print(target)
-        jsd_regularizer = 0
-        if hasattr(self, 'jsd'):
-            logit1 = get_distance(online_pred_one, target_orig_img)
-            logit2 = get_distance(online_pred_two, target_orig_img)
-            jsd_regularizer = self.jsd(logit1, logit2)
-
-        loss = loss_one + loss_two + jsd_regularizer
+        loss_one = loss_fn(online_proj_one, target_proj_two.detach(), orig_proj)
+        loss_two = loss_fn(online_proj_two, target_proj_one.detach(), orig_proj)
+  
+        loss = loss_one + loss_two 
         #loss = loss_one + loss_two
         if target is not None:
-            top1, top5 = get_accuracy(online_pred_one.detach(), target_proj_two.detach(), target)
+            top1, top5 = get_accuracy(online_proj_one.detach(), target_proj_two.detach(), target)
             return loss.mean(), top1, top5
         return loss.mean()

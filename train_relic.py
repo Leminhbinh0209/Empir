@@ -4,7 +4,7 @@ import torch
 from torchvision import models, transforms
 from torch.utils.data import DataLoader
 import wandb
-from model_zoo import BYOL, Experiment
+from model_zoo import ReLIC
 import pytorch_lightning as pl
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.callbacks import ModelCheckpoint
@@ -20,7 +20,7 @@ OUTPUT_DIR = "../../../media/data1/binh/SSL/"
 resnet = models.resnet50(pretrained=False, zero_init_residual=True)
 # constants
 args = edict(
-    RUN = 'pretrain_imagenet_accGrad2_Byol',
+    RUN = 'pretrain_imagenet_accGrad2_ReLIC',
     BATCH_SIZE = 128,
     ACCUMULATE_GRAD_BATCHES = 2,
     EPOCHS     = 300,
@@ -44,7 +44,7 @@ class AdjustLearningRate(Callback):
         self.current_lr = init_lr
         self.init_beta = 0.99
         self.use_momentum = use_momentum
-        
+
     def adjust_learning_rate(self, optimizer, pl_module, epoch):
         """Decay the learning rate based on schedule"""
         lr = self.init_lr
@@ -75,7 +75,7 @@ class AdjustLearningRate(Callback):
 class SelfSupervisedLearner(pl.LightningModule):
     def __init__(self, net, lr=0.1, **kwargs):
         super().__init__()
-        self.learner = BYOL(net, **kwargs)
+        self.learner = ReLIC(net, **kwargs)
         self.lr = lr
         self.use_momentum = kwargs.get('use_momentum')
     def forward(self, images, target=None):
@@ -120,12 +120,9 @@ class MyImageNetModule(pl.LightningDataModule):
     '''
     def setup(self, stage: Optional[str] = None):
 
-        # Assign train/val datasets for use in dataloaders
         if stage == "fit" or stage is None:
             self.train_dataset = self.dataset_type(self.data_dir, split='train', transform=self.transform)
-            #self.mnist_train, self.mnist_val = random_split(mnist_full, [55000, 5000])
 
-        # Assign test dataset for use in dataloader(s)
         if stage == "test" or stage is None:
             self.test_dataset = self.dataset_type(self.data_dir, split='val', transform=self.transform)
 
@@ -141,13 +138,11 @@ class MyImageNetModule(pl.LightningDataModule):
 
 if __name__ == '__main__':
     pl.seed_everything(42, workers=True)
-    
     # logger
     wandb_logger = WandbLogger(name=args.RUN, 
                         project='Self-Supervised Representation Learning', 
-                        config=args, logger=f"{OUTPUT_DIR}/byol/loggings/", 
+                        config=args, logger=f"{OUTPUT_DIR}/relic/loggings/", 
                         entity="ssl2022")
-    
     # DataModule
     dm = MyImageNetModule(
         num_workers=args.NUM_WORKERS, 
@@ -166,11 +161,10 @@ if __name__ == '__main__':
         use_jsd = False,
         
     )
-    # Callbacks
-    # saves a file like: my/path/sample-mnist-epoch=02-val_loss=0.32.ckpt
+
     checkpoint_callback = ModelCheckpoint(
         monitor="train_top1",
-        dirpath=f"{OUTPUT_DIR}/byol/results/",
+        dirpath=f"{OUTPUT_DIR}/relic/results/",
         filename=args.RUN+'-{epoch:02d}-{train_top1:.2f}',
         save_last=True,
        # save_top_k=1,
@@ -193,12 +187,10 @@ if __name__ == '__main__':
         accumulate_grad_batches = args.ACCUMULATE_GRAD_BATCHES,
         sync_batchnorm = True,
         logger = wandb_logger,
-        resume_from_checkpoint = f"{OUTPUT_DIR}/results/byol.ckpt",
+        resume_from_checkpoint = None,
         precision=16,
-        callbacks=[checkpoint_callback, lr_scheduler],
-        #auto_scale_batch_size=True, Tuner used
+        callbacks=[checkpoint_callback, lr_scheduler],   
         deterministic=True,
-        # Testing purposes
         overfit_batches=args.OVERFIT
     )
 
