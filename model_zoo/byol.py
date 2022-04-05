@@ -1,13 +1,11 @@
 import copy
 import random
 from functools import wraps
-
 import torch
 from torch import nn
 import torch.nn.functional as F
-
 from torchvision import transforms as T
-
+from .utils import DropGrad
 # helper functions
 
 def default(val, def_val):
@@ -330,11 +328,18 @@ class BYOL(nn.Module):
         self.use_momentum = use_momentum
         self.target_encoder = None
         self.target_ema_updater = EMA(moving_average_decay)
+
+        # Some paprameter for optimizing online predictor
         self.local_opt = local_opt
+            
 
         if not local_opt: # Local optimization for online predictor
             self.online_predictor = MLP(projection_size, projection_size, projection_hidden_size, use_momentum=use_momentum) # as in official SimSiam implementation
         else:
+            print("Use Local Optimized Online Predictor")
+            self.opt_steps = 5
+            self.train_opt_lr = 0.01
+            self.dropout = DropGrad('gaussian', 0.1, 'constant')
             self.online_predictor = MLP_fw(projection_size, projection_size, projection_hidden_size, use_momentum=use_momentum) 
         # get device of network and make wrapper same device
         device = get_module_device(net)
@@ -369,7 +374,51 @@ class BYOL(nn.Module):
         base_params = [u[1] for u in base_params]
 
         return predictor_params, base_params
-    def _optim_online_predictor(self, )
+    def _optim_online_predictor(self, o1, o2, t1, t2, to):
+        """        
+            Optim the predictor head firt
+        Args:
+            o1: online_proj_one.clone().detach(),
+            o2: online_proj_two, 
+            t1: target_proj_one, 
+            t2: target_proj_two, 
+            to: target_orig_img
+        return:
+            None
+        """
+        fast_parameters = list(self.online_predictor.parameters())
+        for weight in self.online_predictor.parameters():
+          weight.fast = None
+        self.online_predictor.zero_grad()
+        for _ in range(self.opt_steps):
+            op_1, op_2 =  self.online_predictor(o1), self.online_predictor(o2)
+
+            ### Similar loss with the forward function
+            loss_one = loss_fn(op_1, t2)
+            loss_two = loss_fn(op_2, t1)
+ 
+            jsd_regularizer = 0
+            if hasattr(self, 'jsd'):
+                logit1 = get_distance(op_1, to)
+                logit2 = get_distance(op_2, to)
+                jsd_regularizer = self.jsd(logit1, logit2)
+
+            loss = loss_one + loss_two + jsd_regularizer
+            grad = torch.autograd.grad(loss, fast_parameters, create_graph=True)
+
+            grad = [g.detach() for g in grad]
+            ### Update the predictor head
+            fast_parameters = []
+            for k, (name, weight) in enumerate(self.online_predictor.named_parameters()):
+                # regularization
+                grad[k] = self.dropout(grad[k])
+                if weight.fast is None:
+                    weight.fast = weight - self.train_opt_lr * grad[k] #link fast weight to weight
+                else:
+                    weight.fast = weight.fast - self.train_opt_lr * grad[k]
+                fast_parameters.append(weight.fast)
+
+
     def forward(
         self,
         x,
@@ -400,7 +449,19 @@ class BYOL(nn.Module):
             target_orig_img, _ = target_encoder(self.normalize(x))
             target_orig_img.detach_()
 
-        
+        if self.local_opt:
+            # Optimize localy the online predictor for the online projected vectors one and two
+            self._optim_online_predictor(
+                online_proj_one.clone().detach(),
+                online_proj_two.clone().detach(), 
+                target_proj_one, 
+                target_proj_two,
+                target_orig_img,
+            )
+            online_pred_one = self.online_predictor(online_proj_one)
+            online_pred_two = self.online_predictor(online_proj_two)
+            
+
         loss_one = loss_fn(online_pred_one, target_proj_two.detach())
         loss_two = loss_fn(online_pred_two, target_proj_one.detach())
          
