@@ -20,12 +20,12 @@ OUTPUT_DIR = "../../../media/data1/binh/SSL/"
 resnet = models.resnet50(pretrained=False, zero_init_residual=True)
 # constants
 args = edict(
-    RUN = 'pretrain_imagenet_accGrad2_Simsiam',
+    RUN = 'pretrain_imagenet_accGrad2_Byol',
     BATCH_SIZE = 128,
     ACCUMULATE_GRAD_BATCHES = 2,
     EPOCHS     = 300,
     OVERFIT = 0,
-    LR         = 0.05,#1.2 * 1e-1,
+    LR         = 0.2, 
     NUM_GPUS   = 2,
     IMAGE_SIZE = 224,
     NUM_WORKERS = 8,
@@ -44,6 +44,7 @@ class AdjustLearningRate(Callback):
         self.current_lr = init_lr
         self.init_beta = 0.99
         self.use_momentum = use_momentum
+        
     def adjust_learning_rate(self, optimizer, pl_module, epoch):
         """Decay the learning rate based on schedule"""
         lr = self.init_lr
@@ -57,13 +58,9 @@ class AdjustLearningRate(Callback):
             assert self.milestones is not None
             for milestone in self.milestones:
                 lr *= 0.1 if self.epoch >= milestone else 1.
-
-        for param_idx ,param_group in enumerate(optimizer.param_groups):
+        for param_group in optimizer.param_groups:
             param_group['lr'] = lr
-            if param_idx == 1:
-                param_group['lr'] = self.init_lr
         self.current_lr = lr
-
     def on_train_epoch_start(self, trainer, pl_module):
         optimizers = trainer.optimizers
         for optimizer in optimizers:
@@ -98,12 +95,11 @@ class SelfSupervisedLearner(pl.LightningModule):
         return {'loss': loss, 'progress_bar': tqdm_dict, 'log':tqdm_dict}
 
     def configure_optimizers(self):
-        predictor_params, base_params = self.learner._get_parameter()
-        opt = torch.optim.SGD([{'params':base_params, 'lr':self.lr }], 
-                            {'params':predictor_params, 'lr':self.lr }, 
-                            momentum=0.9, weight_decay=0.0001)
+        opt = torch.optim.SGD(self.parameters(), lr=self.lr, momentum=0.9, weight_decay=1.5e-6)
         return opt
 
+
+# custom DataModule
 class MyImageNetModule(pl.LightningDataModule):
     def __init__(self, data_dir: str = "/home/data/Imagenet", num_workers=8, batch_size=128, image_size=225):
         super().__init__()
@@ -149,7 +145,7 @@ if __name__ == '__main__':
     # logger
     wandb_logger = WandbLogger(name=args.RUN, 
                         project='Self-Supervised Representation Learning', 
-                        config=args, logger=f"{OUTPUT_DIR}/simsiam/loggings/", 
+                        config=args, logger=f"{OUTPUT_DIR}/byol/loggings/", 
                         entity="ssl2022")
     
     # DataModule
@@ -164,10 +160,9 @@ if __name__ == '__main__':
         lr = args.LR * 4 * 128 / 256,
         image_size = args.IMAGE_SIZE,
         hidden_layer = 'avgpool',
-        projection_size = 256,
-        projection_hidden_size = 4096,
-        moving_average_decay = 0.99,
-        use_momentum = False,
+        projection_size = 128,
+        moving_average_decay = 0.996,
+        use_momentum = True,
         use_jsd = False,
         
     )
@@ -175,7 +170,7 @@ if __name__ == '__main__':
     # saves a file like: my/path/sample-mnist-epoch=02-val_loss=0.32.ckpt
     checkpoint_callback = ModelCheckpoint(
         monitor="train_top1",
-        dirpath=f"{OUTPUT_DIR}/simsiam/results/",
+        dirpath=f"{OUTPUT_DIR}/byol/results/",
         filename=args.RUN+'-{epoch:02d}-{train_top1:.2f}',
         save_last=True,
        # save_top_k=1,
@@ -198,7 +193,7 @@ if __name__ == '__main__':
         accumulate_grad_batches = args.ACCUMULATE_GRAD_BATCHES,
         sync_batchnorm = True,
         logger = wandb_logger,
-        resume_from_checkpoint = None,
+        resume_from_checkpoint = f"{OUTPUT_DIR}/results/byol.ckpt",
         precision=16,
         callbacks=[checkpoint_callback, lr_scheduler],
         #auto_scale_batch_size=True, Tuner used

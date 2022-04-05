@@ -4,7 +4,7 @@ import torch
 from torchvision import models, transforms
 from torch.utils.data import DataLoader
 import wandb
-from byol_pytorch import BYOL, Experiment
+from model_zoo import BYOL, Experiment
 import pytorch_lightning as pl
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.callbacks import ModelCheckpoint

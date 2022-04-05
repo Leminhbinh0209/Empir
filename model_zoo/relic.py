@@ -7,172 +7,57 @@ from torch import nn
 import torch.nn.functional as F
 
 from torchvision import transforms as T
+from .byol import (default, 
+                    flatten,
+                    singleton, 
+                    get_module_device, 
+                    set_requires_grad, 
+                    RandomApply, EMA, 
+                    RandomApply, 
+                    update_moving_average,
+                    get_accuracy, accuracy, get_distance
+                    )
 
-# helper functions
 
-def default(val, def_val):
-    return def_val if val is None else val
 
-def flatten(t):
-    return t.reshape(t.shape[0], -1)
 
-def singleton(cache_key):
-    def inner_fn(fn):
-        @wraps(fn)
-        def wrapper(self, *args, **kwargs):
-            instance = getattr(self, cache_key)
-            if instance is not None:
-                return instance
-
-            instance = fn(self, *args, **kwargs)
-            setattr(self, cache_key, instance)
-            return instance
-        return wrapper
-    return inner_fn
-
-def get_module_device(module):
-    return next(module.parameters()).device
-
-def set_requires_grad(model, val):
-    for p in model.parameters():
-        p.requires_grad = val
-
-# loss fn
 
 def loss_fn(x, y):
-    x = F.normalize(x, dim=-1, p=2)
-    y = F.normalize(y, dim=-1, p=2)
-    return 2 - 2 * (x * y).sum(dim=-1)
-
+    pass
 # augmentation utils
-
-class RandomApply(nn.Module):
-    def __init__(self, fn, p):
-        super().__init__()
-        self.fn = fn
-        self.p = p
-    def forward(self, x):
-        if random.random() > self.p:
-            return x
-        return self.fn(x)
-
-# exponential moving average
-
-class EMA():
-    def __init__(self, beta):
-        super().__init__()
-        self.beta = beta
-
-    def update_average(self, old, new):
-        if old is None:
-            return new
-        return old * self.beta + (1 - self.beta) * new
-
-def update_moving_average(ema_updater, ma_model, current_model):
-    for current_params, ma_params in zip(current_model.parameters(), ma_model.parameters()):
-        old_weight, up_weight = ma_params.data, current_params.data
-        ma_params.data = ema_updater.update_average(old_weight, up_weight)
-
 # MLP class for projector and predictor
 
 class MLP(nn.Module):
-    def __init__(self, dim, projection_size, hidden_size = 4096, use_momentum=True):
+    def __init__(self, dim, projection_size):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Linear(dim, hidden_size, bias=use_momentum),
-            nn.BatchNorm1d(hidden_size),
+            nn.Linear(dim, 4096, bias=True),
+            nn.BatchNorm1d(4096),
             nn.ReLU(inplace=True),
-            nn.Linear(hidden_size, projection_size)
+            nn.Linear(4096, 2048, bias=True),
+            nn.BatchNorm1d(2048),
+            nn.ReLU(inplace=True),
+            nn.Linear(2048, 1024, bias=True),
+            nn.BatchNorm1d(1024),
+            nn.ReLU(inplace=True),
+            nn.Linear(1024, 512, bias=True),
+            nn.BatchNorm1d(512),
+            nn.ReLU(inplace=True),
+            nn.Linear(512, projection_size)
         )
 
     def forward(self, x):
         return self.net(x)
 
-class SimSiamProjector(nn.Module):
-    def __init__(self, dim, projection_size, hidden_size = 4096, use_momentum=False):
-        super().__init__()
-        self.net =  nn.Sequential(nn.Linear(dim, hidden_size, bias=use_momentum),
-                                        nn.BatchNorm1d(hidden_size),
-                                        nn.ReLU(inplace=True), # first layer
-                                        nn.Linear(hidden_size, hidden_size, bias=use_momentum),
-                                        nn.BatchNorm1d(hidden_size),
-                                        nn.ReLU(inplace=True), # second layer
-                                        nn.Linear(hidden_size, projection_size),
-                                        nn.BatchNorm1d(projection_size, affine=False)) # output layer
-        self.net[6].bias.requires_grad = False # hack: not use bias as it is followed by BN
-
-
-    def forward(self, x):
-        return self.net(x)
-# Calculate accuracy
-def accuracy(output, target, topk=(1,)):
-    """Computes the accuracy over the k top predictions for the specified values of k"""
-    with torch.no_grad():
-        maxk = max(topk)
-        batch_size = target.size(0)
-
-        _, pred = output.topk(maxk, 1, True, True)
-        pred = pred.t()
-        correct = pred.eq(target.view(1, -1).expand_as(pred))
-
-        res = []
-        for k in topk:
-            #correct_k = correct[:k].view(-1).float().sum(0, keepdim=True)
-            correct_k = correct[:k].reshape(k*correct.shape[1]).float().sum(0, keepdim=True)
-            res.append(correct_k.mul_(100.0 / batch_size))
-        return res
-def get_accuracy(x1, x2, target):
-    with torch.no_grad():
-        output = torch.mm(x1, x2.t())
-    top1 = accuracy(output, target, topk=(1, 5))
-    return top1
-def get_distance(x1, x2):
-    x1 = F.normalize(x1, dim=-1, p=2)
-    x2 = F.normalize(x2, dim=-1, p=2)
-
-    output = torch.mm(x1, x2.t())
-    return output / 0.2
-
-# Jensen-Shannon Divergence
-class JSD(nn.Module):
-    """ Jensen-Shannon Divergence + Cross-Entropy Loss
-    Based on impl here: https://github.com/google-research/augmix/blob/master/imagenet.py
-    From paper: 'AugMix: A Simple Data Processing Method to Improve Robustness and Uncertainty -
-    https://arxiv.org/abs/1912.02781
-    Hacked together by / Copyright 2020 Ross Wightman
-    """
-    def __init__(self, num_splits=2, alpha=1.):
-        super().__init__()
-        self.num_splits = num_splits
-        self.alpha = alpha
-        self.cross_entropy = nn.CrossEntropyLoss()
-
-
-    def __call__(self, logits1, logits2):
-       # print(targets.shape, logits1.shape)
-        # Cross-entropy is only computed on clean images
-        p_aug1, p_aug2 = F.softmax(
-          logits1, dim=1), F.softmax(
-              logits2, dim=1),
-              
-        # Clamp mixture distribution to avoid exploding KL divergence
-        p_mixture = torch.clamp((p_aug1 + p_aug2) / 2., 1e-7, 1).log()
-        loss =  self.alpha * (F.kl_div(p_mixture, p_aug1, reduction='batchmean') +
-                    F.kl_div(p_mixture, p_aug2, reduction='batchmean')) / 2 
-        return loss
-# a wrapper class for the base neural network
-# will manage the interception of the hidden layer output
-# and pipe it into the projecter and predictor nets
 
 class NetWrapper(nn.Module):
-    def __init__(self, net, projection_size, projection_hidden_size, layer = -2,  use_momentum=True):
+    def __init__(self, net, projection_size, layer = -2,  use_momentum=True):
         super().__init__()
         self.net = net
         self.layer = layer
 
         self.projector = None
         self.projection_size = projection_size
-        self.projection_hidden_size = projection_hidden_size
         self.use_momentum = use_momentum
         self.hidden = {}
         self.hook_registered = False
@@ -199,10 +84,7 @@ class NetWrapper(nn.Module):
     @singleton('projector')
     def _get_projector(self, hidden):
         _, dim = hidden.shape
-        if self.use_momentum:
-            projector = MLP(dim, self.projection_size, self.projection_hidden_size)
-        else:
-            projector = SimSiamProjector(dim, self.projection_size, self.projection_hidden_size)
+        projector = MLP(dim, self.projection_size)
         return projector.to(hidden)
 
     def get_representation(self, x):
@@ -232,14 +114,13 @@ class NetWrapper(nn.Module):
 
 # main class
 
-class BYOL(nn.Module):
+class ReLIC(nn.Module):
     def __init__(
         self,
         net,
         image_size,
         hidden_layer = -2,
-        projection_size = 256,
-        projection_hidden_size = 4096,
+        projection_size = 128,
         augment_fn = None,
         augment_fn2 = None,
         moving_average_decay = 0.99,
@@ -273,14 +154,13 @@ class BYOL(nn.Module):
         self.normalize =T.Normalize(
                 mean=torch.tensor([0.485, 0.456, 0.406]),
                 std=torch.tensor([0.229, 0.224, 0.225]))
-        self.online_encoder = NetWrapper(net, projection_size, projection_hidden_size, layer=hidden_layer, use_momentum=use_momentum)
-        if use_jsd:
-            self.jsd = JSD()
+        self.online_encoder = NetWrapper(net, projection_size, layer=hidden_layer, use_momentum=use_momentum)
+      
         self.use_momentum = use_momentum
         self.target_encoder = None
         self.target_ema_updater = EMA(moving_average_decay)
 
-        self.online_predictor = MLP(projection_size, projection_size, projection_hidden_size, use_momentum=use_momentum) # as in official SimSiam implementation
+        self.online_predictor = MLP(projection_size, projection_size) # as in official SimSiam implementation
 
         # get device of network and make wrapper same device
         device = get_module_device(net)
@@ -306,7 +186,6 @@ class BYOL(nn.Module):
     def _get_parameter(self):
         predictor_param_name = []
         predictor_params = list([])
-       
         predictor_params += list(getattr(self, "online_predictor").parameters())
         for i, param in getattr(self, "online_predictor").named_parameters():
             predictor_param_name.append(f"online_predictor.{i}")
@@ -314,7 +193,7 @@ class BYOL(nn.Module):
         base_params = list(
             filter(lambda kv: kv[0] not in predictor_param_name, self.named_parameters()))
         base_params = [u[1] for u in base_params]
-        
+
         return predictor_params, base_params
 
     def forward(
