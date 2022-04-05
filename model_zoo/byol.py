@@ -339,7 +339,7 @@ class BYOL(nn.Module):
             print("Use Local Optimized Online Predictor")
             self.opt_steps = 5
             self.train_opt_lr = 0.01
-            self.dropout = DropGrad('gaussian', 0.1, 'constant')
+            self.dropout = DropGrad('gaussian', 0.1, 'constant') # meta learning trick
             self.online_predictor = MLP_fw(projection_size, projection_size, projection_hidden_size, use_momentum=use_momentum) 
         # get device of network and make wrapper same device
         device = get_module_device(net)
@@ -396,17 +396,15 @@ class BYOL(nn.Module):
             ### Similar loss with the forward function
             loss_one = loss_fn(op_1, t2)
             loss_two = loss_fn(op_2, t1)
- 
             jsd_regularizer = 0
             if hasattr(self, 'jsd'):
                 logit1 = get_distance(op_1, to)
                 logit2 = get_distance(op_2, to)
                 jsd_regularizer = self.jsd(logit1, logit2)
-
             loss = loss_one + loss_two + jsd_regularizer
-            grad = torch.autograd.grad(loss, fast_parameters, create_graph=True)
 
-            grad = [g.detach() for g in grad]
+            grad = torch.autograd.grad(loss, fast_parameters, create_graph=True)
+            grad = [g.detach() for g in grad] # first order approx
             ### Update the predictor head
             fast_parameters = []
             for k, (name, weight) in enumerate(self.online_predictor.named_parameters()):
@@ -450,7 +448,8 @@ class BYOL(nn.Module):
             target_orig_img.detach_()
 
         if self.local_opt:
-            # Optimize localy the online predictor for the online projected vectors one and two
+            # Foreach mini-batch, Optimize locally the online predictor. 
+            # Thus, correctly predict the centor eta from one oservation.
             self._optim_online_predictor(
                 online_proj_one.clone().detach(),
                 online_proj_two.clone().detach(), 
