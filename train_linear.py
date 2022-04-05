@@ -12,7 +12,7 @@ import torch
 from torchvision import models, transforms
 from torch.utils.data import DataLoader
 import wandb
-from model_zoo import BYOL, Experiment
+from model_zoo import BYOL
 import pytorch_lightning as pl
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.callbacks import ModelCheckpoint
@@ -39,6 +39,8 @@ args = edict(
     NUM_GPUS   = 2,
     IMAGE_SIZE = 224,
     NUM_WORKERS = 8,
+    CLASSES = 102,
+    ACCURACY = 'macro' # macro for Flower, other datasets micro according to BYOL paper
 )
 #custom Callbacks
 class AdjustLearningRate(Callback):
@@ -76,16 +78,15 @@ class AdjustLearningRate(Callback):
 
 # pytorch lightning module
 class TransferLearner(pl.LightningModule):
-    def __init__(self, net, lr=0.1, **kwargs):
+    def __init__(self, net, args, lr=0.1, **kwargs):
         super().__init__()
-        self.learner = Experiment(net, **kwargs)
+        self.learner = BYOL(net, **kwargs)
         self.lr = lr
         self.use_momentum = kwargs.get('use_momentum')
-        self.fc = torch.nn.Linear(2048, 102)
-        self.relu = torch.nn.ReLU()
+        self.fc = torch.nn.Linear(2048, args.CLASSES)
         self.cross_entropy = torch.nn.CrossEntropyLoss()
-        self.train_acc = torchmetrics.Accuracy(average='macro',num_classes=102)
-        self.valid_acc = torchmetrics.Accuracy(average='macro',num_classes=102)
+        self.train_acc = torchmetrics.Accuracy(average=args.ACCURACY,num_classes=args.CLASSES)
+        self.valid_acc = torchmetrics.Accuracy(average=args.ACCURACY,num_classes=args.CLASSES)
         self.dt = None
 
     @torch.no_grad()
@@ -132,17 +133,13 @@ class MyImageNetModule(pl.LightningDataModule):
     def __init__(self, data_dir: str = "/home/data/", dataset='CIFAR10', num_workers=8, batch_size=128, image_size=225):
         super().__init__()
         self.data_dir = data_dir
+        # according to BYOL do not use augmentations. Confirm
         self.train_transform = transforms.Compose([
             transforms.Resize((image_size, image_size)),
-            #transforms.RandomResizedCrop(224),
-           # transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
         ])
         self.transform = transforms.Compose([
             transforms.Resize((image_size, image_size)),
-            #transforms.CenterCrop(224),
-            #transforms.CenterCrop((image_size, image_size)),
-            #transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
         ])
         self.dataset = dataset
@@ -199,10 +196,11 @@ if __name__ == '__main__':
         image_size=args.IMAGE_SIZE
     )
     PATH = 'results/byol+jsd.ckpt'
-    init_lr= args.LR * args.BATCH_SIZE * 2 / 256
+    init_lr= args.LR * args.BATCH_SIZE * args.NUM_GPUS / 256
     print(init_lr)
     model = TransferLearner(
         resnet,
+        args,
         lr = init_lr,
         image_size = args.IMAGE_SIZE,
         hidden_layer = 'avgpool',
@@ -237,7 +235,6 @@ if __name__ == '__main__':
         # Callbacks
 
     lr_scheduler = AdjustLearningRate(
-        milestones=[20, 60, 90],
         init_lr=init_lr,
         max_epoch=args.EPOCHS,
         cos=True,
@@ -258,7 +255,6 @@ if __name__ == '__main__':
         deterministic=True,
         # Testing purposes
         overfit_batches=args.OVERFIT,
-        auto_lr_find=True
     )
 
     trainer.fit(model, dm)

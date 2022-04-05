@@ -7,6 +7,7 @@ results/
 *.so
 
 # Distribution / packaging
+results/
 .Python
 build/
 develop-eggs/
