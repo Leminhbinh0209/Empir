@@ -149,7 +149,7 @@ if __name__ == '__main__':
     # logger
     wandb_logger = WandbLogger(name=args.RUN, 
                         project='Self-Supervised Representation Learning', 
-                        config=args, logger=f"{OUTPUT_DIR}/simsiam/loggings/", 
+                        config=args, save_dir=f"{OUTPUT_DIR}/simsiam/loggings/", 
                         entity="ssl2022")
     
     # DataModule

@@ -141,7 +141,7 @@ if __name__ == '__main__':
     # logger
     wandb_logger = WandbLogger(name=args.RUN, 
                         project='Self-Supervised Representation Learning', 
-                        config=args, logger=f"{OUTPUT_DIR}/relic/loggings/", 
+                        config=args, save_dir=f"{OUTPUT_DIR}/relic/loggings/", 
                         entity="ssl2022")
     # DataModule
     dm = MyImageNetModule(
