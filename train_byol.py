@@ -25,7 +25,7 @@ args = edict(
     ACCUMULATE_GRAD_BATCHES = 2,
     EPOCHS     = 300,
     OVERFIT = 0,
-    LR         = 0.05,#1.2 * 1e-1,
+    LR         = 0.05,
     NUM_GPUS   = 4,
     IMAGE_SIZE = 224,
     NUM_WORKERS = 8,
@@ -35,12 +35,12 @@ args = edict(
 class AdjustLearningRate(Callback):
     def __init__(self, init_lr, max_epoch, use_momentum=False, milestones = None, cos=False, warmup=0):
         super().__init__()
-        self.epoch = 200
+        self.epoch = 0
         self.milestones = milestones
         self.init_lr = init_lr
         self.cos = cos
         self.warmup = warmup
-        self.epochs = 800 #max_epoch
+        self.epochs = max_epoch
         self.current_lr = init_lr
         self.init_beta = 0.99
         self.use_momentum = use_momentum
@@ -192,7 +192,7 @@ if __name__ == '__main__':
         accumulate_grad_batches = args.ACCUMULATE_GRAD_BATCHES,
         sync_batchnorm = True,
         logger = wandb_logger,
-        resume_from_checkpoint = f"{OUTPUT_DIR}/results/byol.ckpt",
+        resume_from_checkpoint = None,
         precision=16,
         callbacks=[checkpoint_callback, lr_scheduler],
         deterministic=True,

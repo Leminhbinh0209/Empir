@@ -403,13 +403,13 @@ class BYOL(nn.Module):
                 jsd_regularizer = self.jsd(logit1, logit2)
             loss = loss_one + loss_two + jsd_regularizer
 
-            grad = torch.autograd.grad(loss, fast_parameters, create_graph=True)
+            grad = torch.autograd.grad(loss, fast_parameters, create_graph=True) 
             grad = [g.detach() for g in grad] # first order approx
             ### Update the predictor head
             fast_parameters = []
             for k, (name, weight) in enumerate(self.online_predictor.named_parameters()):
                 # regularization
-                grad[k] = self.dropout(grad[k])
+                grad[k] = self.dropout(grad[k]) 
                 if weight.fast is None:
                     weight.fast = weight - self.train_opt_lr * grad[k] #link fast weight to weight
                 else:
