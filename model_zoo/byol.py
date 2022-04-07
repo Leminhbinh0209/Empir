@@ -324,7 +324,7 @@ class BYOL(nn.Module):
                                 use_momentum=use_momentum
                                 )
         if use_jsd:
-            self.jsd = JSD()
+            self.jsd = JSD(alpha=6.)
         self.use_momentum = use_momentum
         self.target_encoder = None
         self.target_ema_updater = EMA(moving_average_decay)
@@ -469,7 +469,7 @@ class BYOL(nn.Module):
         if hasattr(self, 'jsd'):
             logit1 = get_distance(online_pred_one, target_orig_img)
             logit2 = get_distance(online_pred_two, target_orig_img)
-            jsd_regularizer = self.jsd(logit1, logit2)
+            jsd_regularizer = self.jsd(logit1, logit2) 
 
         loss = loss_one + loss_two + jsd_regularizer
         #loss = loss_one + loss_two

@@ -20,7 +20,7 @@ OUTPUT_DIR = "../../../media/data1/binh/SSL/"
 resnet = models.resnet50(pretrained=False, zero_init_residual=True)
 # constants
 args = edict(
-    RUN = 'pretrain_imagenet_accGrad2_Byol',
+    RUN = 'pretrain_imagenet_accGrad2_ByolV2',
     BATCH_SIZE = 128,
     ACCUMULATE_GRAD_BATCHES = 2,
     EPOCHS     = 300,
@@ -52,6 +52,7 @@ class AdjustLearningRate(Callback):
             if self.use_momentum:
                 pl_module.learner.target_ema_updater.beta = 1 - (1 - beta) * (math.cos(math.pi * epoch / self.epochs) + 1) * 0.5
             if epoch > self.warmup:
+                #epoch -= self.warmup
                 lr *= 0.5 * (1. + math.cos(math.pi * epoch / self.epochs))
         else:  # stepwise lr schedule
             assert self.milestones is not None
@@ -146,7 +147,7 @@ if __name__ == '__main__':
     # logger
     wandb_logger = WandbLogger(name=args.RUN, 
                         project='Self-Supervised Representation Learning', 
-                        config=args, save_dir=f"{OUTPUT_DIR}/byol/loggings/", 
+                        config=args, save_dir=f"{OUTPUT_DIR}/byolv2/loggings/", 
                         entity="ssl2022")
     
     # DataModule
@@ -165,14 +166,14 @@ if __name__ == '__main__':
         projection_hidden_size = 4096,
         moving_average_decay = 0.99,
         use_momentum = True,
-        use_jsd = False,
+        use_jsd = True,
         
     )
     # Callbacks
     # saves a file like: my/path/sample-mnist-epoch=02-val_loss=0.32.ckpt
     checkpoint_callback = ModelCheckpoint(
         monitor="train_top1",
-        dirpath=f"{OUTPUT_DIR}/byol/results/",
+        dirpath=f"{OUTPUT_DIR}/byolv2/results/",
         filename=args.RUN+'-{epoch:02d}-{train_top1:.2f}',
         save_last=True,
         every_n_epochs = 100,
