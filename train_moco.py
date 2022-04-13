@@ -20,18 +20,18 @@ import math
 from easydict import EasyDict as edict
 # test model, a resnet 50
 
-OUTPUT_DIR = './'#"../../../media/data1/binh/SSL/"
+OUTPUT_DIR = "../../../media/data1/binh/SSL/"
 
-resnet = models.resnet50#(pretrained=False, zero_init_residual=True)
+resnet = models.resnet50 # Moco (pretrained=False, zero_init_residual=True)
 # constants
 args = edict(
     RUN = 'pretrain_imagenet_accGrad2_MoCoV2',
     BATCH_SIZE = 64,
     ACCUMULATE_GRAD_BATCHES = 2,
     EPOCHS     = 300,
-    OVERFIT = 10,
+    OVERFIT = 0,
     LR         = 0.05,
-    NUM_GPUS   = 4,
+    NUM_GPUS   = 2,
     IMAGE_SIZE = 224,
     NUM_WORKERS = 8,
     WARMUP = 10,
@@ -83,13 +83,12 @@ class SelfSupervisedLearner(pl.LightningModule):
         super().__init__()
         self.learner = MoCo(net, **kwargs)
         self.lr = lr
-    def forward(self, images, target=None):
-        return self.learner(images, target=target)
+    def forward(self, images):
+        return self.learner(im_q=images[0], im_k=images[1])
 
     def training_step(self, batch, batch_idx):
         images, targets = batch
-        target = torch.arange(images.shape[0]).to(self.device)
-        loss, top1, top5 = self.forward(images, target=target)
+        loss, top1, top5 = self.forward(images)
 
         # Log training loss 
         self.log('training_loss', loss,  on_step=True, on_epoch=True, prog_bar=True)
@@ -113,7 +112,7 @@ class MyImageNetModule(pl.LightningDataModule):
         normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                      std=[0.229, 0.224, 0.225])
         self.transform = transforms.Compose([
-            transforms.RandomResizedCrop(224, scale=(0.2, 1.)),
+            transforms.RandomResizedCrop(image_size, scale=(0.2, 1.)),
             transforms.RandomApply([
                 transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)  # not strengthened
             ], p=0.8),
@@ -195,7 +194,7 @@ if __name__ == '__main__':
     )
     
     trainer = pl.Trainer(
-        gpus = [0,1,2,3],
+        gpus = list(range(args.NUM_GPUS)),
         strategy = 'ddp',
         max_epochs = args.EPOCHS,
         accumulate_grad_batches = args.ACCUMULATE_GRAD_BATCHES,

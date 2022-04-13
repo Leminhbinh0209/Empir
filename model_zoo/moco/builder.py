@@ -2,6 +2,21 @@
 import torch
 import torch.nn as nn
 
+def accuracy(output, target, topk=(1,)):
+    """Computes the accuracy over the k top predictions for the specified values of k"""
+    with torch.no_grad():
+        maxk = max(topk)
+        batch_size = target.size(0)
+
+        _, pred = output.topk(maxk, 1, True, True)
+        pred = pred.t()
+        correct = pred.eq(target.view(1, -1).expand_as(pred))
+
+        res = []
+        for k in topk:
+            correct_k = correct_k = correct[:k].reshape(k*correct.shape[1]).float().sum(0, keepdim=True)#correct[:k].view(-1).float().sum(0, keepdim=True)
+            res.append(correct_k.mul_(100.0 / batch_size))
+        return res
 
 class MoCo(nn.Module):
     """
@@ -40,6 +55,7 @@ class MoCo(nn.Module):
         self.queue = nn.functional.normalize(self.queue, dim=0)
 
         self.register_buffer("queue_ptr", torch.zeros(1, dtype=torch.long))
+        self.ce = nn.CrossEntropyLoss()
 
     @torch.no_grad()
     def _momentum_update_key_encoder(self):
@@ -156,8 +172,9 @@ class MoCo(nn.Module):
 
         # dequeue and enqueue
         self._dequeue_and_enqueue(k)
-
-        return logits, labels
+        loss = self.ce(logits, labels)
+        acc1, acc5 = accuracy(logits[..., 0:128], labels, topk=(1, 5))
+        return loss, acc1, acc5
 
 
 # utils
