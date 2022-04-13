@@ -1,3 +1,8 @@
+try:
+    import pytorch_lightning
+except:
+    import sys
+    sys.path.append("../pytorch-lightning/")
 import os
 from backbones import get_model
 import torch
@@ -24,7 +29,7 @@ args = edict(
     BATCH_SIZE = 64,
     ACCUMULATE_GRAD_BATCHES = 2,
     EPOCHS     = 300,
-    OVERFIT = 0,
+    OVERFIT = 10,
     LR         = 0.05,
     NUM_GPUS   = 4,
     IMAGE_SIZE = 224,
