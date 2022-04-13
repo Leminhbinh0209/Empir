@@ -5,7 +5,7 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 from torchvision import transforms as T
-from .utils import DropGrad
+#from .utils import DropGrad
 # helper functions
 
 def default(val, def_val):
@@ -427,7 +427,7 @@ class BYOL(nn.Module):
         assert not (self.training and x.shape[0] == 1), 'you must have greater than 1 sample when training, due to the batchnorm in the projection layer'
 
         if return_embedding:
-            return self.online_encoder(x, return_projection = return_projection)
+            return self.online_encoder(self.normalize(x), return_projection = return_projection)
 
         image_one, image_two = self.augment1(x), self.augment2(x)
 
