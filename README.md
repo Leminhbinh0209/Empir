@@ -22,5 +22,7 @@
 ---
 
 ## Installation
+
 Please refer to [solo-learn](https://github.com/vturrisi/solo-learn) repository.
+
 ---
