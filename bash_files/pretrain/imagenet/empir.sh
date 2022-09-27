@@ -1,0 +1,49 @@
+python3 ../../../main_pretrain.py \
+    --dataset imagenet \
+    --backbone resnet50 \
+    --data_dir /home/data \
+    --train_dir imagenet/train \
+    --val_dir imagenet/val \
+    --max_epochs 100 \
+    --devices 0,1 \
+    --accelerator gpu \
+    --strategy ddp \
+    --sync_batchnorm \
+    --precision 16 \
+    --optimizer sgd \
+    --lars \
+    --eta_lars 0.001 \
+    --exclude_bias_n_norm \
+    --scheduler warmup_cosine \
+    --lr 0.45 \
+    --accumulate_grad_batches 16 \
+    --classifier_lr 0.2 \
+    --weight_decay 1e-6 \
+    --batch_size 128 \
+    --num_workers 4 \
+    --dali \
+    --brightness 0.4 \
+    --contrast 0.4 \
+    --saturation 0.2 \
+    --hue 0.1 \
+    --gaussian_prob 1.0 0.1 \
+    --solarization_prob 0.0 0.2 \
+    --num_crops_per_aug 1 1 \
+    --apply_jsd \
+    --alpha_jsd 1.0 \
+    --with_origin_image \
+    --topk 128 \
+    --name byol-topk128-alpajsd1-resnet50-imagenet-100ep \
+    --entity ssl2022 \
+    --project solo-learn \
+    --wandb \
+    --save_checkpoint \
+    --auto_resume \
+    --checkpoint_dir /solo-learn/imagenet/ \
+    --method byol \
+    --proj_output_dim 256 \
+    --proj_hidden_dim 4096 \
+    --pred_hidden_dim 4096 \
+    --base_tau_momentum 0.99 \
+    --final_tau_momentum 1.0 \
+    --momentum_classifier
