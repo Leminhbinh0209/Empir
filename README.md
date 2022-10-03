@@ -1,10 +1,10 @@
 # Expectation-Maximization via Pretext-Invariant Representations<br>
-<br />
-*ACMSAC Anonymous Submission, ID 1025*
+<br>
+_ACMSAC Anonymous Submission, ID 1025_
 
 ## Overview of our framework
 <p align="center">
-    <img src="https://i.ibb.co/qpy86L6/main-arch.png" width="700" alt="overall pipeline">
+    <img src="https://i.ibb.co/gSw1scS/arc-empir.gif" width="700" alt="overall pipeline">
 <p>
 
 ---
