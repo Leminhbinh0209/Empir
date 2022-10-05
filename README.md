@@ -4,7 +4,7 @@ _ACMSAC Anonymous Submission, ID 1025_
 
 ## Overview of our framework
 <p align="center">
-    <img src="https://i.ibb.co/gFGNwk3/arc-empir2.gif"  width="800" alt="overall pipeline">
+    <img src="https://i.ibb.co/JKkg8Zv/arc-empir3.gif"  width="800" alt="overall pipeline">
 <p>
 
 ---
