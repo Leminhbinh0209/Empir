@@ -1,6 +1,6 @@
 # Expectation-Maximization via Pretext-Invariant Representations<br>
 <br>
-_ACMSAC Anonymous Submission, ID 1025_
+
 
 ## Overview of our framework
 <p align="center">
